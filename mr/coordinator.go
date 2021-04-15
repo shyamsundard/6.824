@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -23,20 +22,19 @@ A job is assigned a unique id, a list of file names and a status.
 Status is assigned the value waiting, running, finished.
 */
 type Job struct {
-	id     int
-	files  []string
+	index  int
 	status int
+	files  []string
 }
 
 type Coordinator struct {
-	mapJobs    []Job
-	reduceJobs []Job
-	// status is assigned a value map or reduce
 	status          int
 	nMap            int
 	remainingMap    int
 	nReduce         int
 	remainingReduce int
+	mapJobs         []Job
+	reduceJobs      []Job
 	lock            sync.Mutex
 }
 
@@ -87,10 +85,22 @@ func (c *Coordinator) Done() bool {
 //
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
+	c.status = MAP
+	c.nMap = len(files)
+	c.remainingMap = c.nMap
+	c.nReduce = nReduce
+	c.remainingReduce = c.nReduce
+	c.mapJobs = make([]Job, c.nMap)
+	c.reduceJobs = make([]Job, c.nReduce)
 
-	fmt.Println("making coordinator")
+	for index, file := range files {
+		c.mapJobs[index] = Job{index, WAITING, []string{file}}
+	}
+	for index := range c.reduceJobs {
+		c.reduceJobs[index] = Job{index, WAITING, []string{}}
+	}
 
-	// Your code here.
+	log.Println("making a new coordinator")
 
 	c.server()
 	return &c
