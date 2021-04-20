@@ -6,8 +6,10 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
-import "strconv"
+import (
+	"os"
+	"strconv"
+)
 
 //
 // example to show how to declare the arguments
@@ -23,7 +25,18 @@ type ExampleReply struct {
 }
 
 // Add your RPC definitions here.
+// Status defines the type of job to be performed, ie., MAP, REDUCE
+// NOther defines the number of other jobs after the map step ie., reduce
+type JobArgs struct {
+	Job    Job
+	Status int
+}
 
+type JobReply struct {
+	Job    Job
+	Status int
+	NOther int
+}
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.

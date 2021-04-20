@@ -17,14 +17,12 @@ const (
 	FINISHED
 )
 
-/**
-A job is assigned a unique id, a list of file names and a status.
-Status is assigned the value waiting, running, finished.
-*/
+// Job is assigned a unique id, list of files to process and a status
+// Status is assigned the value WAITING, RUNNING, FINISHED
 type Job struct {
-	index  int
-	status int
-	files  []string
+	Index  int
+	Status int
+	Files  []string
 }
 
 type Coordinator struct {
@@ -94,6 +92,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.reduceJobs = make([]Job, c.nReduce)
 
 	for index, file := range files {
+		log.Printf("loading - %s", file)
 		c.mapJobs[index] = Job{index, WAITING, []string{file}}
 	}
 	for index := range c.reduceJobs {
@@ -104,4 +103,72 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	c.server()
 	return &c
+}
+
+func (c *Coordinator) AcquireJob(args *JobArgs, reply *JobReply) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	// The index value is used to acquire a new job or commit a completed job.
+	// As part of committing the map jobs, get the names of files that have to be sent to reduce.
+	if args.Job.Index >= 0 {
+		// Commit only a job that is running. For cases where the job may be started in multiple workers.
+		// If a map job completed, extract the list of file names to be reduced
+		// Update the count of number of jobs.
+		// If all jobs of a type are completed, update the coordinator status to the next step in the process.
+		if args.Status == MAP {
+			if c.mapJobs[args.Job.Index].Status == RUNNING {
+				c.mapJobs[args.Job.Index].Status = FINISHED
+				c.mapJobs[args.Job.Index].Files = append(c.mapJobs[args.Job.Index].Files, args.Job.Files...)
+				c.remainingMap--
+			}
+			if c.remainingMap == 0 {
+				c.status = REDUCE
+			}
+		} else {
+			if c.reduceJobs[args.Job.Index].Status == RUNNING {
+				c.reduceJobs[args.Job.Index].Status = FINISHED
+				c.remainingReduce--
+			}
+			if c.remainingReduce == 0 {
+				c.status = FINISHED
+			}
+		}
+	}
+
+	// Handout jobs to the workers if there are remaining jobs.
+	// If the index is greater than 0, then commit the job as completed
+	// If the index is less than 0, based on the status of the coordinator, return a job.
+	if c.status == MAP {
+		for index, job := range c.mapJobs {
+			if job.Status == WAITING {
+				log.Println("assigning a new job")
+				reply.Status = MAP
+				reply.NOther = c.nReduce
+				reply.Job = job
+				c.mapJobs[index].Status = RUNNING
+				// TODO - include a timer that checks if the job is still running.
+				return nil
+			}
+			reply.NOther = c.nReduce
+			reply.Status = MAP
+			reply.Job = Job{-1, WAITING, make([]string, 0)}
+		}
+	}
+
+	if c.status == REDUCE {
+		for index, job := range c.reduceJobs {
+			if job.Status == WAITING {
+				reply.Status = REDUCE
+				reply.NOther = c.nMap
+				reply.Job = job
+				c.reduceJobs[index].Status = RUNNING
+				// TODO - include a timer that checks for status of a job
+				return nil
+			}
+			reply.NOther = c.nMap
+			reply.Status = REDUCE
+			reply.Job = Job{-1, WAITING, make([]string, 0)}
+		}
+	}
+	return nil
 }

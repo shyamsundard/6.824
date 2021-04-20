@@ -1,10 +1,12 @@
 package mr
 
-import "fmt"
-import "log"
-import "net/rpc"
-import "hash/fnv"
-
+import (
+	"fmt"
+	"hash/fnv"
+	"log"
+	"net/rpc"
+	"time"
+)
 
 //
 // Map functions return a slice of KeyValue.
@@ -24,17 +26,44 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-
 //
 // main/mrworker.go calls this function.
 //
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+	// When a worker comes up construct the args with a default structure.
+	args := JobArgs{Job{Index: -1}, MAP}
+	for {
+		// CallExample()
+		reply := JobReply{}
+		// Acquire a new job from the coordinator
+		call("Coordinator.AcquireJob", &args, &reply)
+		// If the status of the reply is FINISHED, all jobs have completed execution. Break.
+		if reply.Status == FINISHED {
+			break
+		}
+		// If the reply job has an index greater than 0 a new job is assigned.
+		// Finish and commit the job.
+		if reply.Job.Index >= 0 {
+			// Create a structure to commit the completed job
+			commitJob := reply.Job
+			// The reply job is either a map or reduce.
+			if reply.Status == MAP {
+				// Assign the files to reduce to the commitJob files
+				commitJob.Files = doMap()
+			} else {
+				doReduce()
+				commitJob.Files = make([]string, 0)
+			}
+			// The args is assigned the commit information.
+			args = JobArgs{commitJob, reply.Status}
+		} else {
+			// If no jobs are provided, wait.
+			time.Sleep(time.Second)
+			args = JobArgs{Job{Index: -1}, MAP}
+		}
+	}
 
 }
 
@@ -83,3 +112,11 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	fmt.Println(err)
 	return false
 }
+
+// Once a new job is acquired, the worker does a map or a reduce.
+func doMap() []string {
+	resultFiles := make([]string, 0)
+	return resultFiles
+}
+
+func doReduce() {}
